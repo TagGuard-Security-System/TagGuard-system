@@ -1,0 +1,35 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@layer components {
+  .demo-card {
+    @apply bg-white rounded-lg shadow-lg border border-gray-200 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1;
+  }
+  
+  .portal-preview {
+    @apply bg-gradient-to-br rounded-lg p-6 text-white relative overflow-hidden;
+  }
+  
+  .portal-preview::before {
+    @apply absolute inset-0 bg-black bg-opacity-20 rounded-lg;
+    content: '';
+  }
+  
+  .portal-preview > * {
+    @apply relative z-10;
+  }
+  
+  .coming-soon-badge {
+    @apply inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-orange-100 text-orange-800;
+  }
+}

@@ -1,0 +1,17 @@
+// filepath: packages/landing-page/tsconfig.json
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "Node",
+    "jsx": "react-jsx",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "allowSyntheticDefaultImports": true,
+    "outDir": "dist"
+  },
+  "include": ["src"],
+  "exclude": ["node_modules", "dist"]
+}

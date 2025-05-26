@@ -1,0 +1,27 @@
+{
+  "name": "security-guard-management-system",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:landing": "yarn workspace landing-page dev",
+    "dev:registry": "yarn workspace registry-portal dev",
+    "dev:companies": "yarn workspace company-portal dev",
+    "dev:client": "yarn workspace client-app dev",
+    "dev:demo": "yarn workspace demo-portal dev",
+    "dev:api": "yarn workspace api dev",
+    "dev:all": "concurrently \"yarn dev:landing\" \"yarn dev:registry\" \"yarn dev:companies\" \"yarn dev:client\" \"yarn dev:demo\"",
+    "build:shared": "yarn workspace @security-guard/shared build",
+    "build:all": "yarn workspaces run build",
+    "install:all": "yarn install"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "concurrently": "^8.0.0",
+    "nodemon": "^3.0.0",
+    "typescript": "^5.0.0"
+  },
+  "packageManager": "yarn@4.9.1"
+}

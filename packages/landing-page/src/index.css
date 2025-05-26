@@ -1,0 +1,34 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@layer components {
+  .btn-portal {
+    @apply inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md text-white transition-colors duration-200;
+  }
+  
+  .btn-portal-blue {
+    @apply bg-blue-600 hover:bg-blue-700;
+  }
+  
+  .btn-portal-green {
+    @apply bg-green-600 hover:bg-green-700;
+  }
+  
+  .btn-portal-purple {
+    @apply bg-purple-600 hover:bg-purple-700;
+  }
+  
+  .btn-portal-orange {
+    @apply bg-orange-600 hover:bg-orange-700;
+  }
+}
