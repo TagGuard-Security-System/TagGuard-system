@@ -732,9 +732,9 @@ const Hero = () => {
               </div>
               
               <h1 className="text-5xl md:text-6xl lg:text-7xl font-black text-white leading-[0.9] tracking-tight">
-                Revolutionizing{' '}
+                Transforming{' '}
                 <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-blue-400 to-purple-400 animate-pulse">
-                  Security
+                  Security Guard
                 </span>
                 <br />
                 Management{' '}
