@@ -1,6 +1,13 @@
+/* index.css */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+html {
+  scroll-behavior: smooth;
+  /* Adjust this value based on your fixed header's height (h-20 = 80px) */
+  scroll-padding-top: 80px;
+}
 
 body {
   margin: 0;
@@ -9,26 +16,32 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  background-color: #f8fafc; /* A light base background for pages */
 }
 
 @layer components {
   .btn-portal {
     @apply inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md text-white transition-colors duration-200;
   }
-  
-  .btn-portal-blue {
-    @apply bg-blue-600 hover:bg-blue-700;
+  .btn-portal-blue { @apply bg-blue-600 hover:bg-blue-700; }
+  .btn-portal-green { @apply bg-green-600 hover:bg-green-700; }
+  .btn-portal-purple { @apply bg-purple-600 hover:bg-purple-700; }
+  .btn-portal-orange { @apply bg-orange-600 hover:bg-orange-700; }
+
+  /* Unified section container styling */
+  .section-container {
+    @apply min-h-screen flex flex-col items-center justify-center py-20 px-4 sm:px-6 lg:px-8 text-center;
   }
-  
-  .btn-portal-green {
-    @apply bg-green-600 hover:bg-green-700;
-  }
-  
-  .btn-portal-purple {
-    @apply bg-purple-600 hover:bg-purple-700;
-  }
-  
-  .btn-portal-orange {
-    @apply bg-orange-600 hover:bg-orange-700;
-  }
+}
+
+/* Basic animation for elements appearing on scroll (can be enhanced with JS + IntersectionObserver) */
+.fade-in-up {
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 0.5s ease-out, transform 0.5s ease-out;
+}
+
+.fade-in-up.is-visible {
+  opacity: 1;
+  transform: translateY(0);
 }
