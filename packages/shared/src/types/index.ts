@@ -1,5 +1,5 @@
 // User roles for the entire system
-export type UserRole = 'registry_admin' | 'company_admin' | 'client' | 'guard';
+export type UserRole = 'registry_admin' | 'company_admin' | 'client' | 'guard' |  'system_admin';
 
 // Navigation item structure
 export interface NavItem {
@@ -21,12 +21,20 @@ export interface BaseUser {
   updatedAt: string;
 }
 
+// System Admin - TagGuard officials
+export interface SystemAdmin extends BaseUser {
+  role: 'system_admin';
+  permissions: string[];
+  department: string;
+}
+
 // Registry Admin - Government officials
 export interface RegistryAdmin extends BaseUser {
   role: 'registry_admin';
   permissions: string[];
   department: string;
 }
+
 
 // Company Admin - Security company managers
 export interface CompanyAdmin extends BaseUser {
@@ -124,3 +132,6 @@ export interface ApiResponse<T> {
   message?: string;
   error?: string;
 }
+
+
+

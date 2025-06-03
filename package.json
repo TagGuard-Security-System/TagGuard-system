@@ -12,7 +12,8 @@
     "dev:client": "yarn workspace client-app dev",
     "dev:demo": "yarn workspace demo-portal dev",
     "dev:api": "yarn workspace api dev",
-    "dev:all": "concurrently \"yarn dev:landing\" \"yarn dev:registry\" \"yarn dev:companies\" \"yarn dev:client\" \"yarn dev:demo\"",
+    "dev:admin": "yarn workspace system-admin dev",
+    "dev:all": "concurrently \"yarn dev:landing\" \"yarn dev:registry\" \"yarn dev:companies\" \"yarn dev:client\" \"yarn dev:demo\" \"yarn dev:api\" \"yarn dev:admin\"",
     "build:shared": "yarn workspace @security-guard/shared build",
     "build:all": "yarn workspaces run build",
     "install:all": "yarn install"

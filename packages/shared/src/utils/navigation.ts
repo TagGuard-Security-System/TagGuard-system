@@ -1,6 +1,17 @@
 import { NavItem } from '../types';
 
 // National Registry Navigation
+export const systemNavigation: NavItem[] = [
+  { label: 'Dashboard', href: '/dashboard' },
+  { label: 'All Guards', href: '/guards' },
+  { label: 'Companies', href: '/companies' },
+  { label: 'Audit Logs', href: '/audit' },
+  { label: 'Regulations', href: '/regulations' },
+  { label: 'Reports', href: '/reports' },
+  { label: 'Admin Settings', href: '/admin' }
+];
+
+// National Registry Navigation
 export const registryNavigation: NavItem[] = [
   { label: 'Dashboard', href: '/dashboard' },
   { label: 'All Guards', href: '/guards' },
