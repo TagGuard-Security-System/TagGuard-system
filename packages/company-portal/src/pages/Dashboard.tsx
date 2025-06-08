@@ -1,226 +1,779 @@
-import React from 'react';
-import { Card } from '@security-guard/shared';
+import React, { useState, useEffect } from 'react';
+import {
+    Users, Shield, Building, DollarSign, UserCheck, FileText, AlertTriangle, TrendingUp, MapPin,
+    Activity, Clock, Star, Phone, BookOpen, AlertCircle, Loader2, Database, Wifi, WifiOff
+} from 'lucide-react';
+import { LineChart, Line, XAxis, YAxis, ResponsiveContainer } from 'recharts';
+
+// Firebase imports: db instance from config, and Firestore methods
+import { collection, getDocs, onSnapshot, Firestore } from 'firebase/firestore';
+import { db } from '../config/firebase'; // Import the initialized db from your config file
+
+// --- START OF INTERFACE DEFINITIONS ---
+interface Guard {
+    id: string;
+    full_name: string;
+    force_number: string;
+    photo_url?: string;
+    phone_number: string;
+    email: string;
+    national_id: string;
+    status: 'active' | 'inactive' | 'suspended';
+    assigned_posts?: string[];
+    certified: boolean;
+    registered_by: string;
+    created_at: string;
+    updated_at: string;
+    seed_id?: string;
+}
+
+interface Company {
+    id: string;
+    client_type: string;
+    name: string;
+    contact_info: {
+        email: string;
+        phone: string;
+    };
+    address: string;
+    requested_guards?: string[];
+    active_posts?: string[];
+    admin_id: string;
+    seed_id?: string;
+}
+
+interface CheckinLog {
+    id: string;
+    tag_id: string;
+    guard_id: string;
+    timestamp: string; // ISO String
+    location_name: string;
+    force_number: string;
+    photo_url?: string;
+    assigned_post: string;
+    status: 'on_time' | 'late' | 'missed';
+    shift_id: string;
+    seed_id?: string;
+}
+
+interface PatrolAssignment {
+    id: string;
+    guard_id: string;
+    post_id: string;
+    start_time: string; // ISO String
+    end_time: string;   // ISO String
+    assigned_by: string;
+    status: 'scheduled' | 'active' | 'completed' | 'cancelled';
+    notes?: string;
+    seed_id?: string;
+}
+
+interface AlertLog {
+    id: string;
+    triggered_by: string;
+    location: string;
+    timestamp: string; // ISO String
+    type: 'panic' | 'emergency' | 'maintenance' | 'security';
+    status: 'pending' | 'resolved' | 'investigating';
+    notified_admin_id: string;
+    seed_id?: string;
+}
+
+interface Checkpoint {
+    id: string;
+    location_name: string;
+    geo_coordinates: {
+        lat: number;
+        long: number;
+    };
+    post_id: string;
+    installed_by: string;
+    installation_date: string; // ISO String
+    seed_id?: string;
+}
+
+interface Post {
+    id: string;
+    client_id: string;
+    location_name: string;
+    geo_coordinates: {
+        lat: number;
+        long: number;
+    };
+    rfid_tags: string[];
+    notes?: string;
+    seed_id?: string;
+}
+
+interface User { // Assuming this is for system users/admins
+    id: string;
+    full_name: string;
+    email: string;
+    phone_number: string;
+    registered_guards?: string[]; // If this user type registers guards
+    seed_id?: string;
+}
+
+interface DashboardData {
+    guards: Guard[];
+    companies: Company[];
+    checkinLogs: CheckinLog[];
+    patrolAssignments: PatrolAssignment[];
+    alertLogs: AlertLog[];
+    checkpoints: Checkpoint[];
+    posts: Post[];
+    users: User[];
+}
+
+interface MetricData {
+    value: number | string;
+    trend: number[];
+    change: string;
+}
+
+interface OperationalAlert {
+    id: string | number;
+    type: 'high' | 'medium' | 'low';
+    title: string;
+    message: string;
+    time: string;
+    icon: React.ComponentType<any>;
+}
+
+interface RecentActivity {
+    id: string;
+    guard: string;
+    action: string;
+    location: string;
+    time: string;
+    status: 'active' | 'completed' | 'reported';
+}
+// --- END OF INTERFACE DEFINITIONS ---
+
+// --- START OF DEMO DATA ---
+const demoData: DashboardData = {
+    guards: [
+        { id: 'demo_guard_1', full_name: 'John Doe (Demo)', force_number: 'GF-D-001', photo_url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150', phone_number: '+1-DEMO-001', email: 'johndoe.demo@secure.com', national_id: 'DEMO123456', status: 'active', assigned_posts: ['post_D001'], certified: true, registered_by: 'admin_D001', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), seed_id: 'guard_D001' },
+        { id: 'demo_guard_2', full_name: 'Jane Smith (Demo)', force_number: 'GF-D-002', phone_number: '+1-DEMO-002', email: 'janesmith.demo@secure.com', national_id: 'DEMO123457', status: 'active', assigned_posts: ['post_D002'], certified: true, registered_by: 'admin_D001', created_at: new Date().toISOString(), updated_at: new Date().toISOString() }
+    ],
+    companies: [
+        { id: 'demo_co_1', client_type: 'company', name: 'Demo Corp Ltd.', contact_info: { email: 'contact@democorp.com', phone: '+1-DEMO-CORP' }, address: '123 Demo Street', admin_id: 'admin_D001', active_posts: ['post_D001'], seed_id: 'co_D001' }
+    ],
+    checkinLogs: [
+        { id: 'demo_chk_1', tag_id: 'tag_D001', guard_id: 'guard_D001', timestamp: new Date(Date.now() - 30 * 60 * 1000).toISOString(), location_name: 'Demo Gate A', force_number: 'GF-D-001', assigned_post: 'post_D001', status: 'on_time', shift_id: 'shift_D001' }
+    ],
+    patrolAssignments: [
+        { id: 'demo_pa_1', guard_id: 'guard_D001', post_id: 'post_D001', start_time: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(), end_time: new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString(), assigned_by: 'admin_D001', status: 'active' }
+    ],
+    alertLogs: [
+        { id: 'demo_al_1', triggered_by: 'guard_D001', location: 'Demo Area 51', timestamp: new Date(Date.now() - 15 * 60 * 1000).toISOString(), type: 'panic', status: 'pending', notified_admin_id: 'admin_D001' }
+    ],
+    checkpoints: [
+        { id: 'demo_cp_1', location_name: 'Demo Checkpoint Alpha', geo_coordinates: { lat: -1.28, long: 36.82 }, post_id: 'post_D001', installed_by: 'admin_D001', installation_date: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString() }
+    ],
+    posts: [
+        { id: 'demo_post_1', client_id: 'co_D001', location_name: 'Demo Main Site', geo_coordinates: { lat: -1.28, long: 36.82 }, rfid_tags: ['tag_D001', 'tag_D002'], notes: 'Primary demo post' }
+    ],
+    users: [
+        { id: 'demo_user_1', full_name: 'Demo Admin User', email: 'admin.demo@example.com', phone_number: '+1-DEMO-ADMIN' }
+    ]
+};
+// --- END OF DEMO DATA ---
 
 const Dashboard: React.FC = () => {
-  // Mock company data - SecureMax Ltd example
-  const companyStats = {
-    companyName: "SecureMax Ltd",
-    totalGuards: 245,
-    onDutyGuards: 89,
-    availableGuards: 67,
-    totalClients: 34,
-    activeContracts: 52,
-    monthlyRevenue: 145750,
-    todayIncidents: 3,
-    missedCheckIns: 2,
-    completedShifts: 156,
-    averageRating: 4.7
-  };
+    const [loading, setLoading] = useState<boolean>(true); // For initial demo data load
+    const [error, setError] = useState<string | null>(null);
+    const [dashboardData, setDashboardData] = useState<DashboardData>(demoData); // UI driven by this, updated by Firebase if connected
 
-  const operationalAlerts = [
-    { type: "high", title: "Missed Check-ins", message: "2 guards missed their scheduled check-ins", time: "15 min ago" },
-    { type: "medium", title: "Shift Coverage", message: "3 shifts need coverage for tomorrow", time: "1 hour ago" },
-    { type: "low", title: "Training Due", message: "15 guards need annual training update", time: "2 hours ago" },
-    { type: "medium", title: "Client Request", message: "New security request from Metro Mall", time: "3 hours ago" }
-  ];
+    // Firebase specific state
+    const [firebaseConnected, setFirebaseConnected] = useState<boolean>(false);
+    const [firebaseData, setFirebaseData] = useState<DashboardData>({
+        guards: [], companies: [], checkinLogs: [], patrolAssignments: [],
+        alertLogs: [], checkpoints: [], posts: [], users: []
+    });
+    const [firebaseLoading, setFirebaseLoading] = useState<boolean>(true);
 
-  const recentActivity = [
-    { guard: "John Smith", action: "Started shift", location: "Downtown Mall", time: "30 min ago", status: "active" },
-    { guard: "Maria Garcia", action: "Completed patrol", location: "Office Complex A", time: "1 hour ago", status: "completed" },
-    { guard: "Ahmed Hassan", action: "Incident report filed", location: "Warehouse District", time: "2 hours ago", status: "reported" },
-    { guard: "Sarah Johnson", action: "Shift ended", location: "Shopping Center", time: "3 hours ago", status: "completed" },
-    { guard: "David Chen", action: "Training completed", location: "Training Center", time: "4 hours ago", status: "completed" }
-  ];
+    // Initialize with demo data quickly for UI responsiveness
+    useEffect(() => {
+        setLoading(true);
+        console.log('Loading TagGuard dashboard with demo data initially...');
+        // Simulating a quick load, not really async here but matches pattern
+        setDashboardData(demoData);
+        setLoading(false);
+        console.log('Demo data set for initial display.');
+    }, []);
 
-  const getAlertClass = (type: string) => {
-    switch (type) {
-      case 'high': return 'alert-high border rounded-lg p-4';
-      case 'medium': return 'alert-medium border rounded-lg p-4';
-      case 'low': return 'alert-low border rounded-lg p-4';
-      default: return 'bg-gray-50 border border-gray-200 rounded-lg p-4';
+    // Effect for Firebase data fetching and real-time updates
+    useEffect(() => {
+        let unsubscribeAlerts = () => {};
+        let unsubscribeCheckins = () => {};
+        let unsubscribeGuards = () => {}; // Example for another collection
+        // Add more unsubscribe functions if you add more listeners
+
+        const initializeFirebase = async () => {
+            setFirebaseLoading(true); // Explicitly set loading for Firebase attempt
+            console.log('Attempting to connect to Firebase and fetch data...');
+
+            try {
+                // Validity check for db
+                let isFirestoreInstanceValid = false;
+                if (db && typeof db === 'object') {
+                    isFirestoreInstanceValid =
+                        (db as any).app?.options?.projectId &&
+                        (db as any).type === 'firestore';
+
+                    if (isFirestoreInstanceValid) {
+                        console.log('[DEBUG] db appears to be a VALID Firestore instance for modular API.');
+                        console.log('[DEBUG] Project ID from db.app.options:', (db as any).app.options.projectId);
+                    } else {
+                        console.warn('[DEBUG] db does NOT appear to be a valid Firestore instance for modular API. Details:');
+                        if (db && typeof db === 'object') console.warn('[DEBUG] db object keys:', Object.keys(db));
+                        if (!(db as any).app?.options?.projectId) console.warn('[DEBUG] - db.app.options.projectId is missing or invalid.');
+                        if ((db as any).type !== 'firestore') console.warn('[DEBUG] - db.type is not "firestore". Actual type:', (db as any).type);
+                    }
+                } else {
+                     console.error('[DEBUG] Imported db object is null, undefined, or not an object.');
+                }
+
+                if (!isFirestoreInstanceValid) {
+                    throw new Error("Firebase 'db' instance is invalid or not correctly initialized. Ensure 'config/firebase.js' exports a valid Firestore instance.");
+                }
+                const firestoreDb = db as Firestore;
+
+                const [
+                    guardsSnap, companiesSnap, checkinLogsSnap, patrolAssignmentsSnap,
+                    alertLogsSnap, checkpointsSnap, postsSnap, usersSnap
+                ] = await Promise.all([
+                    getDocs(collection(firestoreDb, 'Guards')),
+                    getDocs(collection(firestoreDb, 'Companies')),
+                    getDocs(collection(firestoreDb, 'Checkin_Logs')),
+                    getDocs(collection(firestoreDb, 'Patrol_Assignments')),
+                    getDocs(collection(firestoreDb, 'Alert_Logs')),
+                    getDocs(collection(firestoreDb, 'Checkpoints')),
+                    getDocs(collection(firestoreDb, 'Posts')),
+                    getDocs(collection(firestoreDb, 'Users'))
+                ]);
+
+                const fetchedData: DashboardData = {
+                    guards: guardsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Guard)),
+                    companies: companiesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Company)),
+                    checkinLogs: checkinLogsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as CheckinLog)),
+                    patrolAssignments: patrolAssignmentsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as PatrolAssignment)),
+                    alertLogs: alertLogsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as AlertLog)),
+                    checkpoints: checkpointsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Checkpoint)),
+                    posts: postsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Post)),
+                    users: usersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as User))
+                };
+
+                setFirebaseData(fetchedData); // Store raw Firebase data
+                setDashboardData(fetchedData); // Update main UI driving data with live data
+                setFirebaseConnected(true);
+                setError(null); // Clear previous errors on successful fetch
+                console.log('Firebase data loaded successfully:', fetchedData);
+
+                // Example real-time listeners (add more as needed)
+                unsubscribeGuards = onSnapshot(collection(firestoreDb, 'Guards'), (snapshot) => {
+                    const updatedGuards = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Guard));
+                    setFirebaseData(prev => ({ ...prev, guards: updatedGuards }));
+                    setDashboardData(prev => ({ ...prev, guards: updatedGuards })); // Also update main data
+                    console.log('Real-time Guards update:', updatedGuards.length);
+                });
+                unsubscribeAlerts = onSnapshot(collection(firestoreDb, 'Alert_Logs'), (snapshot) => {
+                    const updatedAlerts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as AlertLog));
+                    setFirebaseData(prev => ({ ...prev, alertLogs: updatedAlerts }));
+                    setDashboardData(prev => ({ ...prev, alertLogs: updatedAlerts }));
+                    console.log('Real-time Alert Logs update:', updatedAlerts.length);
+                });
+                unsubscribeCheckins = onSnapshot(collection(firestoreDb, 'Checkin_Logs'), (snapshot) => {
+                    const updatedCheckins = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as CheckinLog));
+                    setFirebaseData(prev => ({ ...prev, checkinLogs: updatedCheckins }));
+                    setDashboardData(prev => ({ ...prev, checkinLogs: updatedCheckins }));
+                    console.log('Real-time Checkin Logs update:', updatedCheckins.length);
+                });
+
+            } catch (err: any) {
+                console.error('Firebase connection or data fetch failed:', err);
+                const errorMessage = err.message || 'Unknown Firebase error.';
+                setError(`Firebase operation failed: ${errorMessage}. Displaying demo data. Check console, ensure Firebase is set up, collections exist, and Firestore rules allow access.`);
+                setFirebaseConnected(false);
+                // Keep displaying demo data if Firebase fails
+                setDashboardData(demoData);
+            } finally {
+                setFirebaseLoading(false);
+                setLoading(false); // Ensure overall loading is false
+            }
+        };
+
+        initializeFirebase();
+
+        return () => { // Cleanup function
+            console.log('Cleaning up Firebase listeners.');
+            unsubscribeGuards();
+            unsubscribeAlerts();
+            unsubscribeCheckins();
+            // Call other unsubscribe functions here
+        };
+    }, []); // Empty dependency array means this runs once on mount
+
+    // --- HELPER FUNCTIONS & CALCULATIONS ---
+    const calculateMetrics = (): Record<string, MetricData> => {
+        // Uses `dashboardData` which is either demo or live Firebase data
+        const { guards, companies, patrolAssignments, alertLogs } = dashboardData;
+
+        const totalGuards = guards.length;
+        const activeGuards = guards.filter(g => g.status === 'active').length;
+        const onDutyGuards = patrolAssignments.filter(p => {
+            if (!p.start_time || !p.end_time) return false;
+            const now = new Date();
+            try {
+                return p.status === 'active' && new Date(p.start_time) <= now && new Date(p.end_time) >= now;
+            } catch (e) { return false; }
+        }).length;
+        const availableGuards = Math.max(0, activeGuards - onDutyGuards);
+        const totalClients = companies.length;
+        const activeContracts = companies.filter(c => c.active_posts && c.active_posts.length > 0).length;
+        const monthlyRevenue = activeContracts * 1250; // Example: $1250 per active contract
+        const today = new Date().toISOString().split('T')[0];
+        const todayIncidents = alertLogs.filter(al => al.timestamp && al.timestamp.startsWith(today)).length;
+        const averageRating = 4.7; // Placeholder
+
+        const generateTrend = (value: number): number[] => {
+            const base = Math.round(value * 0.85);
+            return Array.from({ length: 7 }, (_, i) => Math.max(0, Math.round(base + (value - base) * (i / 6) + (Math.random() - 0.5) * value * 0.1)));
+        };
+
+        return {
+            totalGuards: { value: totalGuards, trend: generateTrend(totalGuards), change: "+2%" },
+            onDutyGuards: { value: onDutyGuards, trend: generateTrend(onDutyGuards), change: "+5%" },
+            availableGuards: { value: availableGuards, trend: generateTrend(availableGuards), change: "-1%" },
+            totalClients: { value: totalClients, trend: generateTrend(totalClients), change: "+1" },
+            activeContracts: { value: activeContracts, trend: generateTrend(activeContracts), change: "+3%" },
+            monthlyRevenue: { value: `KES ${(monthlyRevenue).toLocaleString()}`, trend: generateTrend(monthlyRevenue), change: "+1.5%" },
+            todayIncidents: { value: todayIncidents, trend: generateTrend(Math.max(1, todayIncidents)), change: todayIncidents > 2 ? "+10%" : "-5%" },
+            averageRating: { value: averageRating, trend: [4.2, 4.4, 4.5, 4.6, 4.7, 4.6, 4.8], change: "+0.1" }
+        };
+    };
+
+    const getOperationalAlerts = (): OperationalAlert[] => {
+        const { alertLogs, guards, checkinLogs } = dashboardData;
+        const alerts: OperationalAlert[] = [];
+
+        const recentCheckins = checkinLogs.filter(log => {
+             if(!log.timestamp) return false;
+             try { return new Date().getTime() - new Date(log.timestamp).getTime() < 4 * 60 * 60 * 1000; }
+             catch(e) { return false; }
+        });
+        if (guards.length > 0 && recentCheckins.length < guards.length / 2 && guards.length > 2) { // Avoid for very few guards
+             alerts.push({ id: 'missed_checkins', type: "high", title: "Missed Check-ins", message: `${guards.length - recentCheckins.length} guards may have missed check-ins.`, time: "Recent", icon: AlertCircle });
+        }
+
+        const pendingAlerts = alertLogs.filter(alert => alert.status === 'pending');
+        pendingAlerts.slice(0, 2).forEach((alert) => { // Limit to 2 pending alerts
+            alerts.push({
+                id: alert.id,
+                type: alert.type === 'panic' ? 'high' : 'medium',
+                title: `${alert.type.charAt(0).toUpperCase() + alert.type.slice(1)} Alert`,
+                message: `Alert @ ${alert.location || 'Unknown'} by ${alert.triggered_by || 'System'}`,
+                time: formatTimeAgo(alert.timestamp),
+                icon: AlertTriangle
+            });
+        });
+        if(alerts.length < 4) alerts.push({ id: 'training_due_demo', type: "low", title: "Training Due (Demo)", message: "Security cert renewal for 3 guards", time: "Next Week", icon: BookOpen });
+        if(alerts.length < 4) alerts.push({ id: 'client_req_demo', type: "medium", title: "Client Request (Demo)", message: "Proposal for 'New Biz Park'", time: "Yesterday", icon: Phone });
+        return alerts.slice(0, 4);
+    };
+
+    const getRecentActivity = (): RecentActivity[] => {
+        const { checkinLogs, guards } = dashboardData;
+        return checkinLogs
+            .filter(log => log.timestamp)
+            .sort((a, b) => {
+                try { return new Date(b.timestamp!).getTime() - new Date(a.timestamp!).getTime(); }
+                catch(e) { return 0;}
+            })
+            .slice(0, 5)
+            .map(log => {
+                const guard = guards.find(g => g.id === log.guard_id || g.seed_id === log.guard_id);
+                return {
+                    id: log.id,
+                    guard: guard?.full_name || log.force_number || 'Unknown Guard',
+                    action: log.status === 'on_time' ? 'Checked-in' : (log.status === 'late' ? 'Late Check-in' : 'Missed Check-in'),
+                    location: log.location_name || 'Unknown Location',
+                    time: formatTimeAgo(log.timestamp),
+                    status: log.status === 'on_time' ? 'completed' : 'reported'
+                };
+            });
+    };
+
+    const formatTimeAgo = (timestamp?: string): string => {
+        if (!timestamp) return 'Unknown time';
+        try {
+            const date = new Date(timestamp);
+            const now = new Date();
+            const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+
+            if (isNaN(diffInSeconds)) return 'Invalid date';
+            if (diffInSeconds < 5) return 'just now';
+            if (diffInSeconds < 60) return `${diffInSeconds}s ago`;
+            const diffInMinutes = Math.floor(diffInSeconds / 60);
+            if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
+            const diffInHours = Math.floor(diffInMinutes / 60);
+            if (diffInHours < 24) return `${diffInHours}h ago`;
+            const diffInDays = Math.floor(diffInHours / 24);
+            if (diffInDays < 7) return `${diffInDays}d ago`;
+            return date.toLocaleDateString();
+        } catch (e) {
+            return 'Invalid date';
+        }
+    };
+
+    const getAlertClass = (type: string): string => {
+        const baseClass = "border-l-4 rounded-lg p-4 transition-all duration-200 hover:shadow-md cursor-pointer";
+        switch (type) {
+            case 'high': return `${baseClass} bg-red-50 border-red-500`;
+            case 'medium': return `${baseClass} bg-yellow-50 border-yellow-500`;
+            case 'low': return `${baseClass} bg-blue-50 border-blue-500`;
+            default: return `${baseClass} bg-gray-50 border-gray-300`;
+        }
+    };
+
+    const getActivityStatusColor = (status: string): string => {
+        switch (status) {
+            case 'active': return 'text-emerald-600 bg-emerald-100';
+            case 'completed': return 'text-blue-600 bg-blue-100';
+            case 'reported': return 'text-amber-600 bg-amber-100';
+            default: return 'text-gray-600 bg-gray-100';
+        }
+    };
+
+    // --- RENDER LOGIC ---
+    if (loading && firebaseLoading) { // Show initial loading screen until first Firebase attempt completes
+        return (
+            <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+                <div className="text-center">
+                    <Loader2 className="w-12 h-12 animate-spin text-blue-600 mx-auto mb-4" />
+                    <h2 className="text-xl font-semibold text-slate-900 mb-2">Loading TagGuard Dashboard</h2>
+                    <p className="text-slate-600">Initializing security management system...</p>
+                </div>
+            </div>
+        );
     }
-  };
 
-  const getActivityStatusColor = (status: string) => {
-    switch (status) {
-      case 'active': return 'text-green-600';
-      case 'completed': return 'text-blue-600';
-      case 'reported': return 'text-orange-600';
-      default: return 'text-gray-600';
-    }
-  };
+    const metrics = calculateMetrics();
+    const operationalAlerts = getOperationalAlerts();
+    const recentActivity = getRecentActivity();
 
-  return (
-    <div>
-      {/* Header */}
-      <div className="mb-8">
-        <h2 className="text-3xl font-bold text-gray-900">{companyStats.companyName} Dashboard</h2>
-        <p className="text-gray-600">Operational overview and key performance metrics</p>
-      </div>
+    const mainMetricsConfig = [
+        { id: 'totalGuards', label: 'Total Guards', icon: Users, color: 'from-blue-500 to-blue-600', textColor: 'text-blue-600' },
+        { id: 'onDutyGuards', label: 'On Duty Now', icon: Shield, color: 'from-emerald-500 to-emerald-600', textColor: 'text-emerald-600' },
+        { id: 'totalClients', label: 'Active Clients', icon: Building, color: 'from-purple-500 to-purple-600', textColor: 'text-purple-600' },
+        { id: 'monthlyRevenue', label: 'Monthly Revenue', icon: DollarSign, color: 'from-green-500 to-green-600', textColor: 'text-green-600' }
+    ];
 
-      {/* Key Metrics Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        <Card>
-          <div className="flex items-center">
-            <div className="flex-shrink-0">
-              <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
-                <span className="text-blue-600 text-lg">👥</span>
-              </div>
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Total Guards</p>
-              <p className="text-2xl font-bold text-gray-900">{companyStats.totalGuards}</p>
-            </div>
-          </div>
-        </Card>
+    const secondaryMetricsConfig = [
+        { id: 'availableGuards', label: 'Available Guards', icon: UserCheck, color: 'text-blue-600' },
+        { id: 'activeContracts', label: 'Active Contracts', icon: FileText, color: 'text-emerald-600' },
+        { id: 'todayIncidents', label: "Today's Incidents", icon: AlertTriangle, color: 'text-amber-600' },
+        { id: 'averageRating', label: 'Avg Client Rating', icon: Star, color: 'text-yellow-600' }
+    ];
 
-        <Card>
-          <div className="flex items-center">
-            <div className="flex-shrink-0">
-              <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
-                <span className="text-green-600 text-lg">🟢</span>
-              </div>
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">On Duty Now</p>
-              <p className="text-2xl font-bold text-gray-900">{companyStats.onDutyGuards}</p>
-            </div>
-          </div>
-        </Card>
 
-        <Card>
-          <div className="flex items-center">
-            <div className="flex-shrink-0">
-              <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center">
-                <span className="text-purple-600 text-lg">🏢</span>
-              </div>
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Active Clients</p>
-              <p className="text-2xl font-bold text-gray-900">{companyStats.totalClients}</p>
-            </div>
-          </div>
-        </Card>
-
-        <Card>
-          <div className="flex items-center">
-            <div className="flex-shrink-0">
-              <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
-                <span className="text-green-600 text-lg">💰</span>
-              </div>
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Monthly Revenue</p>
-              <p className="text-2xl font-bold text-gray-900">${companyStats.monthlyRevenue.toLocaleString()}</p>
-            </div>
-          </div>
-        </Card>
-      </div>
-
-      {/* Secondary Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-        <Card>
-          <div className="text-center">
-            <div className="text-2xl font-bold text-blue-600">{companyStats.availableGuards}</div>
-            <p className="text-sm text-gray-600">Available Guards</p>
-          </div>
-        </Card>
-
-        <Card>
-          <div className="text-center">
-            <div className="text-2xl font-bold text-green-600">{companyStats.activeContracts}</div>
-            <p className="text-sm text-gray-600">Active Contracts</p>
-          </div>
-        </Card>
-
-        <Card>
-          <div className="text-center">
-            <div className="text-2xl font-bold text-orange-600">{companyStats.todayIncidents}</div>
-            <p className="text-sm text-gray-600">Today's Incidents</p>
-          </div>
-        </Card>
-
-        <Card>
-          <div className="text-center">
-            <div className="text-2xl font-bold text-yellow-600">{companyStats.averageRating}</div>
-            <p className="text-sm text-gray-600">Average Rating</p>
-          </div>
-        </Card>
-      </div>
-
-      {/* Alerts and Activity Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-        {/* Operational Alerts */}
-        <Card title="Operational Alerts" subtitle="Important notifications requiring attention">
-          <div className="space-y-4">
-            {operationalAlerts.map((alert, index) => (
-              <div key={index} className={getAlertClass(alert.type)}>
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center">
-                    <div className={`w-3 h-3 rounded-full mr-3 ${
-                      alert.type === 'high' ? 'bg-red-500' : 
-                      alert.type === 'medium' ? 'bg-yellow-500' : 'bg-blue-500'
-                    }`}></div>
-                    <div>
-                      <p className="font-medium text-sm">{alert.title}</p>
-                      <p className="text-sm mt-1">{alert.message}</p>
+    return (
+        <div className="min-h-screen bg-slate-50 p-4 md:p-6">
+            <div className="max-w-7xl mx-auto space-y-6 md:space-y-8">
+                {/* Status/Error Banner */}
+                {error && (
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                        <div className="flex items-center space-x-3">
+                            <AlertCircle className="w-5 h-5 text-red-600" />
+                            <div>
+                                <h3 className="font-medium text-red-800">Connection Issue</h3>
+                                <p className="text-sm text-red-700">{error}</p>
+                            </div>
+                        </div>
                     </div>
-                  </div>
-                  <span className="text-xs opacity-75">{alert.time}</span>
+                )}
+                 <div className={`rounded-lg p-4 border ${firebaseConnected ? 'bg-green-50 border-green-200' : 'bg-blue-50 border-blue-200'}`}>
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-3">
+                            {firebaseConnected ? <Wifi className="w-5 h-5 text-green-600" /> : <Activity className="w-5 h-5 text-blue-600" />}
+                            <div>
+                                <h3 className={`font-medium ${firebaseConnected ? 'text-green-800' : 'text-blue-800'}`}>
+                                    {firebaseConnected ? 'Live Data Mode (Firebase Connected)' : 'TagGuard Demo Dashboard'}
+                                </h3>
+                                <p className={`text-sm ${firebaseConnected ? 'text-green-700' : 'text-blue-700'}`}>
+                                    {firebaseConnected ? 'Displaying real-time data from Firestore.' : firebaseLoading ? 'Attempting to connect to Firebase...' : 'Displaying sample data.'}
+                                </p>
+                            </div>
+                        </div>
+                        <div className={`text-sm font-medium ${firebaseConnected ? 'text-green-600' : 'text-blue-600'}`}>
+                            {firebaseLoading ? <Loader2 className="w-4 h-4 animate-spin"/> : firebaseConnected ? 'Live' : 'Demo Mode'}
+                        </div>
+                    </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        </Card>
 
-        {/* Recent Guard Activity */}
-        <Card title="Recent Guard Activity" subtitle="Latest field operations and updates">
-          <div className="space-y-4">
-            {recentActivity.map((activity, index) => (
-              <div key={index} className="flex items-center justify-between py-3 border-b border-gray-100 last:border-b-0">
-                <div className="flex items-center space-x-3">
-                  <div className="h-10 w-10 rounded-full bg-gray-100 flex items-center justify-center">
-                    <span className="text-sm font-medium text-gray-600">
-                      {activity.guard.split(' ').map(n => n[0]).join('')}
-                    </span>
-                  </div>
-                  <div>
-                    <p className="font-medium text-gray-900 text-sm">{activity.guard}</p>
-                    <p className={`text-sm ${getActivityStatusColor(activity.status)}`}>{activity.action}</p>
-                    <p className="text-xs text-gray-500">{activity.location}</p>
-                  </div>
+
+                {/* Header */}
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                    <div>
+                        <h1 className="text-2xl lg:text-3xl font-bold text-slate-900 bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+                            TagGuard Security Dashboard
+                        </h1>
+                        <p className="text-slate-600 mt-1 text-sm lg:text-base">Real-time operational overview and key metrics</p>
+                    </div>
                 </div>
-                <span className="text-xs text-gray-500">{activity.time}</span>
-              </div>
-            ))}
-          </div>
-        </Card>
-      </div>
 
-      {/* Live Guard Map Placeholder */}
-      <Card title="Live Guard Locations" subtitle="Real-time tracking of on-duty guards">
-        <div className="h-80 bg-gradient-to-br from-green-50 to-blue-50 rounded-lg flex items-center justify-center">
-          <div className="text-center">
-            <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <span className="text-3xl">🗺️</span>
-            </div>
-            <h3 className="text-lg font-medium text-gray-900 mb-2">Interactive Guard Map</h3>
-            <p className="text-gray-600 mb-4">Real-time locations and status of on-duty guards</p>
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div className="bg-white rounded-lg p-3">
-                <div className="font-semibold text-green-600">{companyStats.onDutyGuards}</div>
-                <div className="text-gray-600">Guards On Duty</div>
-              </div>
-              <div className="bg-white rounded-lg p-3">
-                <div className="font-semibold text-blue-600">{companyStats.totalClients}</div>
-                <div className="text-gray-600">Active Sites</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </Card>
-    </div>
-  );
+                {/* Main Metrics Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
+                    {mainMetricsConfig.map((metricConf) => {
+                        const metric = metrics[metricConf.id];
+                        if (!metric) return null;
+                        const IconComponent = metricConf.icon;
+                        return (
+                            <div key={metricConf.id} className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 md:p-5 hover:shadow-lg transition-shadow duration-200 flex flex-col justify-between">
+                                <div className="flex items-center justify-between mb-3">
+                                    <div className={`w-10 h-10 bg-gradient-to-br ${metricConf.color} rounded-lg flex items-center justify-center shadow-md`}>
+                                        <IconComponent className="w-5 h-5 text-white" />
+                                    </div>
+                                    <div className={`text-xs font-semibold ${metricConf.textColor} flex items-center`}>
+                                        <TrendingUp className="w-3.5 h-3.5 mr-1" />
+                                        <span>{metric.change}</span>
+                                    </div>
+                                </div>
+                                <div>
+                                    <p className="text-2xl lg:text-3xl font-bold text-slate-800">{String(metric.value)}</p>
+                                    <p className="text-sm text-slate-500 mb-2">{metricConf.label}</p>
+                                </div>
+                                <div className="h-10">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <LineChart data={metric.trend.map((val, index) => ({ value: val, index }))}>
+                                            <XAxis dataKey="index" hide />
+                                            <YAxis hide domain={['dataMin', 'dataMax']} />
+                                            <Line type="monotone" dataKey="value" stroke={(metricConf.textColor.match(/#(?:[0-9a-fA-F]{3}){1,2}|(?:rgb|hsl)a?\([^)]+\)|[a-zA-Z]+/) || ['#8884d8'])[0]} strokeWidth={2} dot={false} />
+                                        </LineChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+
+                {/* Secondary Metrics */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+                    {secondaryMetricsConfig.map((metricConf) => {
+                        const metric = metrics[metricConf.id];
+                        if (!metric) return null;
+                        const IconComponent = metricConf.icon;
+                        return (
+                            <div key={metricConf.id} className="bg-white rounded-lg shadow-sm border border-slate-200 p-3 md:p-4 hover:shadow-md transition-shadow duration-200 flex flex-col justify-between">
+                                <div className="flex items-center justify-between mb-1">
+                                    <IconComponent className={`w-5 h-5 ${metricConf.color}`} />
+                                    <span className={`text-xs font-medium ${metricConf.color}`}>{metric.change}</span>
+                                </div>
+                                <div>
+                                    <p className="text-lg md:text-xl font-bold text-slate-800">{String(metric.value)}</p>
+                                    <p className="text-xs text-slate-500 mb-1.5">{metricConf.label}</p>
+                                </div>
+                                <div className="h-8">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <LineChart data={metric.trend.map((val, index) => ({ value: val, index }))}>
+                                            <XAxis dataKey="index" hide />
+                                            <YAxis hide domain={['dataMin', 'dataMax']} />
+                                            <Line type="monotone" dataKey="value" stroke={(metricConf.color.match(/#(?:[0-9a-fA-F]{3}){1,2}|(?:rgb|hsl)a?\([^)]+\)|[a-zA-Z]+/) || ['#8884d8'])[0]} strokeWidth={1.5} dot={false} />
+                                        </LineChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+
+                {/* Alerts and Activity Grid */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 md:gap-8">
+                    {/* Operational Alerts */}
+                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 md:p-6">
+                        <div className="flex items-center justify-between mb-5">
+                            <div>
+                                <h3 className="text-lg font-semibold text-slate-900">Operational Alerts</h3>
+                                <p className="text-sm text-slate-600">Urgent system notifications</p>
+                            </div>
+                            {operationalAlerts.length > 0 && (
+                                <span className="bg-red-100 text-red-700 text-xs font-semibold px-2.5 py-1 rounded-full">
+                                    {operationalAlerts.length} Active
+                                </span>
+                            )}
+                        </div>
+                        <div className="space-y-4">
+                            {operationalAlerts.length > 0 ? operationalAlerts.map((alert) => {
+                                const IconComponent = alert.icon;
+                                return (
+                                    <div key={alert.id} className={getAlertClass(alert.type)}>
+                                        <div className="flex items-start justify-between">
+                                            <div className="flex items-start space-x-3">
+                                                <IconComponent className={`w-5 h-5 mt-0.5 ${alert.type === 'high' ? 'text-red-600' : alert.type === 'medium' ? 'text-yellow-600' : 'text-blue-600'}`} />
+                                                <div className="flex-1">
+                                                    <p className="font-semibold text-sm text-slate-800 mb-0.5">{alert.title}</p>
+                                                    <p className="text-sm text-slate-600">{alert.message}</p>
+                                                </div>
+                                            </div>
+                                            <span className="text-xs text-slate-500 whitespace-nowrap pt-0.5">{alert.time}</span>
+                                        </div>
+                                    </div>
+                                );
+                            }) : (
+                                <div className="text-center text-slate-500 py-8">
+                                    <Shield className="w-12 h-12 mx-auto mb-3 text-slate-300" />
+                                    <p className="text-sm">No operational alerts at this time.</p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Recent Guard Activity */}
+                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 md:p-6">
+                        <div className="flex items-center justify-between mb-5">
+                            <div>
+                                <h3 className="text-lg font-semibold text-slate-900">Recent Guard Activity</h3>
+                                <p className="text-sm text-slate-600">Latest check-ins and updates</p>
+                            </div>
+                            {recentActivity.length > 0 && <button className="text-sm text-blue-600 hover:text-blue-700 font-medium">View All</button>}
+                        </div>
+                        <div className="space-y-3">
+                            {recentActivity.length > 0 ? recentActivity.map((activity) => (
+                                <div key={activity.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors duration-150">
+                                    <div className="flex items-center space-x-3">
+                                        <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center text-white text-sm font-medium">
+                                            {(activity.guard.split(' ').map(n => n[0]).join('') || 'N/A').substring(0,2)}
+                                        </div>
+                                        <div>
+                                            <p className="font-semibold text-slate-800 text-sm">{activity.guard}</p>
+                                            <div className="flex items-center space-x-2 mt-0.5">
+                                                <p className="text-xs text-slate-600">{activity.action}</p>
+                                                <span className={`text-xs px-1.5 py-0.5 rounded-full ${getActivityStatusColor(activity.status)}`}>
+                                                    {activity.status}
+                                                </span>
+                                            </div>
+                                            <p className="text-xs text-slate-500">{activity.location}</p>
+                                        </div>
+                                    </div>
+                                    <span className="text-xs text-slate-500 whitespace-nowrap">{activity.time}</span>
+                                </div>
+                            )) : (
+                                <div className="text-center text-slate-500 py-8">
+                                    <Activity className="w-12 h-12 mx-auto mb-3 text-slate-300" />
+                                    <p className="text-sm">No recent guard activity.</p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
+
+                {/* Live Guard Map Placeholder */}
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 md:p-6">
+                    <div className="flex items-center justify-between mb-5">
+                        <div>
+                            <h3 className="text-lg font-semibold text-slate-900">Guard Location Map</h3>
+                            <p className="text-sm text-slate-600">Real-time tracking overview</p>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                            <div className="w-2.5 h-2.5 bg-emerald-400 rounded-full animate-pulse"></div>
+                            <span className="text-xs text-slate-500">Live Tracking</span>
+                        </div>
+                    </div>
+                    <div className="h-80 bg-gradient-to-br from-blue-50 to-emerald-50 rounded-xl flex items-center justify-center border border-slate-200">
+                        <div className="text-center p-4">
+                            <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg">
+                                <MapPin className="w-8 h-8 text-white" />
+                            </div>
+                            <h3 className="text-lg font-semibold text-slate-800 mb-2">Interactive Guard Map</h3>
+                            <p className="text-sm text-slate-600 mb-4 max-w-md mx-auto">Real-time GPS tracking and location monitoring of deployed personnel (Map Integration Placeholder).</p>
+                             <div className="grid grid-cols-2 gap-3 max-w-xs mx-auto mb-5">
+                                <div className="bg-white rounded-lg p-3 shadow-sm border border-slate-200">
+                                    <div className="text-xl font-bold text-emerald-600">{String(metrics.onDutyGuards?.value ?? 0)}</div>
+                                    <div className="text-xs text-slate-500">On Duty</div>
+                                </div>
+                                <div className="bg-white rounded-lg p-3 shadow-sm border border-slate-200">
+                                    <div className="text-xl font-bold text-blue-600">{String(metrics.totalClients?.value ?? 0)}</div>
+                                    <div className="text-xs text-slate-500">Active Sites</div>
+                                </div>
+                            </div>
+                            <button className="btn-primary py-2.5 px-5 text-sm">
+                                <Activity className="w-4 h-4 mr-2" />
+                                Launch Interactive Map
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Firebase Data Section (for diagnostics and overview) */}
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 md:p-6">
+                    <div className="flex items-center justify-between mb-5">
+                        <div>
+                            <h3 className="text-lg font-semibold text-slate-900 flex items-center space-x-2">
+                                <Database className="w-5 h-5 text-slate-700" />
+                                <span>Live Firebase Data Overview</span>
+                            </h3>
+                            <p className="text-sm text-slate-600">Record counts from Firestore collections.</p>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                            {firebaseConnected ? (
+                                <> <Wifi className="w-4 h-4 text-emerald-500" /> <span className="text-xs text-emerald-600 font-medium">Connected</span> </>
+                            ) : (
+                                <> <WifiOff className="w-4 h-4 text-red-500" /> <span className="text-xs text-red-600 font-medium"> {firebaseLoading ? 'Connecting...' : 'Offline'} </span> </>
+                            )}
+                        </div>
+                    </div>
+                    {firebaseLoading && !firebaseConnected ? (
+                        <div className="text-center py-10">
+                            <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-3" />
+                            <p className="text-sm text-slate-600">Connecting to Firebase...</p>
+                        </div>
+                    ) : firebaseConnected ? (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                            {[
+                                { name: 'Guards', count: firebaseData.guards.length, icon: Users, color: 'blue' },
+                                { name: 'Companies', count: firebaseData.companies.length, icon: Building, color: 'purple' },
+                                { name: 'Check-in Logs', count: firebaseData.checkinLogs.length, icon: Shield, color: 'emerald' },
+                                { name: 'Patrol Assign.', count: firebaseData.patrolAssignments.length, icon: Clock, color: 'yellow' },
+                                { name: 'Alert Logs', count: firebaseData.alertLogs.length, icon: AlertTriangle, color: 'red' },
+                                { name: 'Checkpoints', count: firebaseData.checkpoints.length, icon: MapPin, color: 'indigo' },
+                                { name: 'Posts', count: firebaseData.posts.length, icon: FileText, color: 'teal' },
+                                { name: 'Users', count: firebaseData.users.length, icon: UserCheck, color: 'pink' },
+                            ].map(item => {
+                                const IconComp = item.icon;
+                                return (
+                                <div key={item.name} className={`bg-gradient-to-br from-${item.color}-50 to-${item.color}-100 p-4 rounded-lg border border-${item.color}-200 shadow-sm`}>
+                                    <div className="flex items-center justify-between mb-2">
+                                        <h4 className={`font-semibold text-sm text-${item.color}-800`}>{item.name}</h4>
+                                        <IconComp className={`w-5 h-5 text-${item.color}-600`} />
+                                    </div>
+                                    <div className={`text-2xl font-bold text-${item.color}-700`}>{item.count}</div>
+                                    <p className={`text-xs text-${item.color}-600`}>Total records</p>
+                                </div>
+                                );
+                            })}
+                        </div>
+                    ) : (
+                        <div className="text-center py-10 bg-slate-50 rounded-lg">
+                            <Database className="w-10 h-10 text-slate-400 mx-auto mb-3" />
+                            <h4 className="text-md font-medium text-slate-800 mb-1">Firebase Not Connected</h4>
+                            <p className="text-sm text-slate-600 mb-3">Unable to fetch live data. Displaying demo information.</p>
+                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 max-w-md mx-auto text-left">
+                                <h5 className="font-medium text-blue-800 text-xs mb-1">Troubleshooting Tips:</h5>
+                                <ul className="text-xs text-blue-700 list-disc list-inside space-y-0.5">
+                                    <li>Ensure Firebase config in <code className="bg-blue-100 text-blue-900 px-1 rounded text-xs">src/config/firebase.js</code> is correct.</li>
+                                    <li>Verify Firestore rules allow read access.</li>
+                                    <li>Check browser console for specific errors.</li>
+                                </ul>
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+            </div> {/* End max-w-7xl */}
+        </div> /* End min-h-screen */
+    );
 };
 
 export default Dashboard;
