@@ -15,7 +15,7 @@
     "dev:admin": "yarn workspace system-admin dev",
     "dev:all": "concurrently \"yarn dev:landing\" \"yarn dev:registry\" \"yarn dev:companies\" \"yarn dev:client\" \"yarn dev:demo\" \"yarn dev:api\" \"yarn dev:admin\"",
     "build:shared": "yarn workspace @security-guard/shared build",
-    "build:all": "yarn workspaces run build",
+    "build:all": "yarn workspaces foreach --all --topological --verbose run build",
     "install:all": "yarn install"
   },
   "devDependencies": {
