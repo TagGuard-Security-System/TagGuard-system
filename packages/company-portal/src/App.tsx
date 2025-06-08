@@ -85,7 +85,7 @@ const Settings = () => (
             </div>
           </div>
         </div>
-        
+       
         <div className="space-y-4">
           <h4 className="font-semibold text-slate-800">System Preferences</h4>
           <div className="data-list">
